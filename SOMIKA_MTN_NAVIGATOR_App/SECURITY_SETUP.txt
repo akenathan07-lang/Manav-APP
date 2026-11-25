@@ -1,0 +1,117 @@
+MTN NAVIGATOR · SECURITY SETUP (v85)
+=====================================
+
+What this does
+- The database itself (not only the app) decides who may read and change each record.
+- Phone numbers and signatures are no longer readable by every signed-in user.
+- Every company keeps an audit log: sign-ins, access changes, deletions, signatures, exports.
+- Somika50K's data moves under co/1003, like every other company.
+
+Order: 0 → 1 → 2 → 3 → 4, then the Google settings (5). Steps 1 and 4 are done in the Firebase console
+on a computer. Everything else is done in the app: Admin → Security shows where you are.
+
+The two rules files are in this zip:
+  firestore-rules-step-A.txt   (safe with every app version: publish it now)
+  firestore-rules-step-B.txt   (publish it LAST, when Admin → Security shows steps 1, 2 and 3 ticked)
+
+
+0. PUT v85 ONLINE
+   - Upload this zip to Netlify as usual.
+   - Open the app on your phone, close it and open it again: the bottom of Settings shows "MTN Navigator v85".
+   - Ask everyone to do the same (close and reopen the app once).
+
+
+1. PUBLISH THE RULES, STEP A  (Firebase console, about 5 minutes)
+   1. On a computer, open https://console.firebase.google.com and sign in with the Google account
+      that owns the project.
+   2. Click the project "smc30k-maintenance".
+   3. In the menu on the left: Build → Firestore Database. (In the newer menu: Databases → Firestore.)
+   4. Click the "Rules" tab at the top of the page.
+   5. Keep a copy of the current rules: the Rules page keeps a history on its left side, and you can
+      also select everything in the editor (Ctrl+A), copy it (Ctrl+C) and paste it into a text file.
+   6. Click inside the editor, select everything (Ctrl+A) and delete it.
+   7. Open firestore-rules-step-A.txt from this zip (Notepad is fine), select everything (Ctrl+A),
+      copy (Ctrl+C) and paste it into the editor (Ctrl+V).
+   8. Click "Publish" (top right of the editor).
+      - If a red message or a red line appears, do NOT publish: take a screenshot and send it to Claude.
+   9. Wait one minute. In the app: Admin → Security → "Check again". Step 1 shows "Published".
+
+
+2. UPGRADE THE DATA  (in the app, a few minutes)
+   1. Admin → Security → "Upgrade the data" → "Upgrade".
+   2. Keep the app open until the line under the button says "Done".
+      - It copies Somika50K's records from the old top-level folders into co/1003 and marks every
+        record of every company with its owner. The old folders are not deleted.
+      - Phones reload by themselves once Somika50K has moved. Nothing to do on them.
+   3. You can run it again at any time: it only adds what is missing.
+
+
+3. EVERYONE ON v85  (in the app)
+   - Admin → Security, step 3 lists who still has an older version. Ask them to close and reopen
+     the app. Admin → People also shows each person's app version.
+   - Someone who has left and will never open the app again: delete their account
+     (Admin → People → the person → Delete the account).
+
+
+4. PUBLISH THE RULES, STEP B  (Firebase console, about 5 minutes)
+   Only when steps 1, 2 and 3 are ticked in Admin → Security.
+   1. In the app: Admin → Security → "Upgrade the data" once more (it picks up anything old phones
+      wrote since step 2).
+   2. Firebase console → Firestore Database → Rules, as in step 1.
+   3. Select everything in the editor, delete it, paste the whole of firestore-rules-step-B.txt, Publish.
+   4. In the app: Admin → Security → "Check again". Step 4 shows "Published".
+   5. Use the app normally for a day: open a schedule, start and complete a task, sign a permit.
+      If anything says it could not be saved, send Claude a screenshot.
+
+   Going back: Rules tab → the history on the left → open the previous version, copy it into the
+   editor and Publish. The app keeps working with step A.
+
+
+5. SETTINGS ONLY YOU CAN CHANGE (Google)
+   Tick each one in Admin → Security once done.
+
+   5a. Limit the web key to your site
+       1. Open https://console.cloud.google.com and choose the project "smc30k-maintenance" (top bar).
+       2. Menu ☰ → APIs & Services → Credentials.
+       3. Under "API keys", open the key used by the app: its value starts with AIzaSyDl6_
+          (Firebase names it "Browser key (auto created by Firebase)").
+       4. Application restrictions → "Websites". Add your site address followed by /*
+          for example https://YOUR-SITE.netlify.app/*  (add your own domain too if you have one).
+       5. API restrictions → "Restrict key" → tick: Cloud Firestore API, Identity Toolkit API,
+          Token Service API. Save.
+       6. Wait 5 minutes, then open the app and sign in. If it fails, check the site address in step 4.
+       Why: the key is public by design, but now only your site can use it.
+
+   5b. Daily backups of the database
+       Backups need the Blaze plan (pay as you go; this app's use stays very small).
+       1. Firebase console → the gear ⚙ next to "Project Overview" → Usage and billing →
+          Details & settings → Modify plan → Blaze. Set a budget alert (for example 5 USD a month).
+       2. Firestore Database → "Disaster recovery" tab (Google Cloud console: Firestore → Disaster
+          recovery) → create a backup schedule: Daily, keep 14 days.
+       3. Optional, same page: turn on Point-in-time recovery (7 days back, to the minute).
+
+   5c. 2-step verification on your Google account
+       1. Open https://myaccount.google.com/security → 2-Step Verification → Turn on.
+       2. Firebase console → ⚙ → Users and permissions: check that only people you trust are listed.
+
+   5d. Optional: IP addresses in the logs
+       The app's audit log cannot record IP addresses (a phone app cannot see them reliably).
+       Google can: Google Cloud console → IAM & Admin → Audit Logs → "Cloud Firestore API" →
+       tick "Data Read" and "Data Write" → Save. This adds logging costs; turn it on only if you
+       need to investigate something.
+
+
+DELETING SOMEONE FROM THE APP
+   - Admin → People → the person → Delete the account. They lose access to every company and
+     must register again. Choose whether to delete what they made (test accounts) or keep it.
+   - A name in People with no account (an old or test account): open it → Remove from the app.
+   - Their login (phone number + password) stays in Firebase Authentication, so they can sign in
+     again with the same password and fill in their profile. To remove the login too, delete the
+     account in the app FIRST, then Firebase console → Authentication → Users → find
+     p243…@users.mtn-navigator.app → ⋮ → Delete account.
+
+
+WHAT IS NOT CHANGED
+   - The list of groups and companies (names and logos) stays readable without signing in, because
+     the sign-up page needs it.
+   - Passwords never pass through the app's database: Firebase Authentication checks them.

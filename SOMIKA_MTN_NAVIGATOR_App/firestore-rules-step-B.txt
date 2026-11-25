@@ -1,0 +1,99 @@
+rules_version = '2';
+// MTN Navigator: Firestore security rules, STEP B (v85). Publish ONLY when Admin → Security shows steps 1, 2 and 3 done:
+// app versions older than v85 cannot write any more once this is published.
+// On top of step A, the database itself now checks who owns each record:
+// - every write must carry the account id of who writes it (eb);
+// - personal records (people cards, Live comments, meetings and answers, permit papers and signatures) only by their owner;
+// - schedules and PM check lists by their owner or a planner (Planner role, or Supervisor / Sr Supervisor with the badge);
+// - job requests and equipment by any member of the company, but nobody can change who owns a record;
+// - Somika50K's old top-level collections become read-only (its data now lives in co/1003).
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function myDoc() { return /databases/$(database)/documents/users/$(request.auth.uid); }
+    function profile() { return get(myDoc()).data; }
+    function hasProfile() { return signedIn() && exists(myDoc()); }
+    function isAdmin() { return hasProfile() && profile().get('role', '') == 'admin'; }
+    function active() { return hasProfile() && profile().get('role', '') != 'blocked'; }
+    function memb(code) { return profile().get('mem', {}).get(code, {}); }
+    function inCo(code) { return isAdmin() || (active() && memb(code).get('st', '') == 'active'); }
+    function saftIn(code) { return isAdmin() || (inCo(code) && memb(code).get('dept', '') == 'SAFT'); }
+    function dataCol(col) { return col in ['schedules', 'equipment', 'requests', 'permits']; }
+
+    // Ownership
+    function stamped() { return request.resource.data.get('eb', '') == request.auth.uid; }
+    function ownsKey(k) { return k is string && k != ''
+        && exists(/databases/$(database)/documents/owners/$(k))
+        && get(/databases/$(database)/documents/owners/$(k)).data.uid == request.auth.uid; }
+    function planner() { return profile().get('pos', '') == 'PLN'
+        || (profile().get('pb', '') == '1' && profile().get('pos', '') in ['SUP', 'SSUP']); }
+    function isNew() { return resource == null || resource.data.get('deleted', false) == true; }
+    function sameMeta() { return isNew() || !('ok' in resource.data)
+        || (request.resource.data.get('ok', '') == resource.data.get('ok', '')
+            && request.resource.data.get('k', '') == resource.data.get('k', '')); }
+    function canWrite(code, col) {
+      let d = request.resource.data;
+      let k = d.get('k', '');
+      let ok = d.get('ok', '');
+      return inCo(code) && stamped() && (isAdmin() || (sameMeta() && (
+           (col == 'schedules' && k == 'sch' && d.get('owner', '') == ok && (ownsKey(ok) || planner()))
+        || (col == 'equipment' && k == 'eq')
+        || (col == 'requests' && k == 'req')
+        || (col == 'requests' && k == 'pmc' && (ownsKey(ok) || planner()))
+        || (col == 'requests' && k in ['ppl', 'lcm', 'mtg', 'mtr', 'ptw', 'pts'] && ownsKey(ok))
+        || (col == 'permits' && k == 'pmt' && saftIn(code))
+      )));
+    }
+
+    match /orgs/{code} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /users/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.get('role', '') == ''
+        && !('mem' in request.resource.data);
+      allow update: if isAdmin() || (signedIn() && request.auth.uid == uid
+        && resource.data.get('role', '') != 'blocked'
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['first', 'last', 'dob', 'sex', 'phone', 'owner', 'sections', 'secs', 'req', 'updated', 'sg', 'sgAt']));
+      allow delete: if signedIn() && (request.auth.uid == uid || isAdmin());
+    }
+
+    match /owners/{key} {
+      allow get: if signedIn();
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid']);
+      allow update: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid']));
+      allow delete: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+    }
+
+    // Somika50K's old top-level collections: read only.
+    match /permits/{id} {
+      allow read: if inCo('1003');
+    }
+    match /{col}/{id} {
+      allow read: if inCo('1003') && (col == 'schedules' || col == 'equipment' || col == 'requests');
+    }
+
+    // Every company, Somika50K included: co/<code>/<collection>.
+    match /co/{code}/{col}/{id} {
+      allow read: if dataCol(col) && inCo(code);
+      allow create, update: if dataCol(col) && canWrite(code, col);
+      allow delete: if isAdmin();
+    }
+
+    match /co/{code}/audit/{id} {
+      allow create: if inCo(code)
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.at == request.time
+        && request.resource.data.keys().hasOnly(['uid', 'who', 'key', 'act', 'what', 'ref', 'ct', 'dev', 'v', 'at']);
+      allow read: if isAdmin();
+    }
+  }
+}

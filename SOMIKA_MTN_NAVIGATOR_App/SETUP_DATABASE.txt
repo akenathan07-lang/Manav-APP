@@ -1,0 +1,46 @@
+SHARED DATABASE SETUP (free Firebase, about 10 minutes, done once)
+
+1. Go to https://console.firebase.google.com and sign in with a Google account.
+2. Click "Create a project". Name it (e.g. smc30k-maintenance). Turn Google Analytics OFF. Create.
+3. Left menu: Build > Firestore Database > Create database.
+   - Location: pick the closest one offered (africa-south1 Johannesburg if listed, otherwise europe-west).
+   - Start in PRODUCTION mode > Create.
+4. Open the "Rules" tab, delete everything, paste the rules below, click Publish:
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /schedules/{id} {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().hasOnly(['json','date','owner','ownerName','updated','deleted'])
+                            && request.resource.data.json.size() < 20000;
+      allow delete: if true;
+    }
+    match /equipment/{id} {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().hasOnly(['json','ownerName','updated','deleted'])
+                            && request.resource.data.json.size() < 20000;
+      allow delete: if true;
+    }
+    match /users/{id} {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().hasOnly(['json','ownerName','updated','deleted'])
+                            && request.resource.data.json.size() < 2000;
+      allow delete: if false;
+    }
+  }
+}
+
+5. Click the gear icon > Project settings > General. Under "Your apps" click the </> (Web) icon,
+   give any nickname, Register app. You will see a block of code. Copy two values from it:
+      apiKey      (starts with AIza...)
+      projectId
+6. Open config.js in this folder with Notepad and fill them in:
+      window.PMN_DB = { projectId: "your-project-id", apiKey: "AIza..." };
+7. Upload the whole folder again to Netlify Drop (same site). Open the app online once.
+   The schedule page then shows "Shared database connected".
+
+Notes
+- Everyone must use the hosted (Netlify) link, not the single-file copy.
+- Accounts, schedules and equipment are all stored in the shared database, so a login works on any device.
+- These rules let anyone who has the app read and write schedules. Do not store confidential data in them.

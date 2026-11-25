@@ -1,0 +1,31 @@
+{
+ "name": "MTN Navigator",
+ "short_name": "MTN Navigator",
+ "description": "Maintenance navigator: equipment, procedures, schedules, permits and live floor updates for each company.",
+ "start_url": "./index.html",
+ "scope": "./",
+ "display": "standalone",
+ "orientation": "any",
+ "background_color": "#1b1c1e",
+ "theme_color": "#1b1c1e",
+ "icons": [
+  {
+   "src": "icons/icon-192.png",
+   "sizes": "192x192",
+   "type": "image/png",
+   "purpose": "any"
+  },
+  {
+   "src": "icons/icon-512.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "any"
+  },
+  {
+   "src": "icons/icon-maskable-512.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "maskable"
+  }
+ ]
+}

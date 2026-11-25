@@ -1,0 +1,76 @@
+rules_version = '2';
+// MTN Navigator: Firestore security rules, STEP A (v85). Safe with every version of the app.
+// - owners: only the account id is kept; nobody can list the records any more.
+// - users: each person can save their own signature on their own record.
+// - audit: a log per company that can only be added to, read by the administrator only.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function myDoc() { return /databases/$(database)/documents/users/$(request.auth.uid); }
+    function profile() { return get(myDoc()).data; }
+    function hasProfile() { return signedIn() && exists(myDoc()); }
+    function isAdmin() { return hasProfile() && profile().get('role', '') == 'admin'; }
+    function active() { return hasProfile() && profile().get('role', '') != 'blocked'; }
+    // Access to a company is given by the administrator in mem.<code> (st: active, dept, sections).
+    function memb(code) { return profile().get('mem', {}).get(code, {}); }
+    function inCo(code) { return isAdmin() || (active() && memb(code).get('st', '') == 'active'); }
+    function saftIn(code) { return isAdmin() || (inCo(code) && memb(code).get('dept', '') == 'SAFT'); }
+    function dataCol(col) { return col in ['schedules', 'equipment', 'requests', 'permits']; }
+
+    // Groups and companies: everyone can read the list (sign-up needs it); only the administrator edits it.
+    match /orgs/{code} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Accounts. A user can never give themselves a role, a company access or a department.
+    match /users/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.get('role', '') == ''
+        && !('mem' in request.resource.data);
+      allow update: if isAdmin() || (signedIn() && request.auth.uid == uid
+        && resource.data.get('role', '') != 'blocked'
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['first', 'last', 'dob', 'sex', 'phone', 'owner', 'sections', 'secs', 'req', 'updated', 'sg', 'sgAt']));
+      allow delete: if signedIn() && (request.auth.uid == uid || isAdmin());
+    }
+
+    // Owner keys (first.last → account id). No name, phone or signature here, and no listing.
+    match /owners/{key} {
+      allow get: if signedIn();
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid']);
+      allow update: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid']));
+      allow delete: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+    }
+
+    // Somika50K (code 1003): its original top-level collections, until the move to co/1003 (step B closes them).
+    match /permits/{id} {
+      allow read: if inCo('1003');
+      allow write: if saftIn('1003');
+    }
+    match /{col}/{id} {
+      allow read, write: if inCo('1003') && (col == 'schedules' || col == 'equipment' || col == 'requests');
+    }
+
+    // Every company: co/<code>/<collection>. Only Safety signs permits.
+    match /co/{code}/{col}/{id} {
+      allow read: if dataCol(col) && inCo(code);
+      allow write: if dataCol(col) && ((col != 'permits' && inCo(code)) || (col == 'permits' && saftIn(code)));
+    }
+
+    // Audit log: members add entries stamped with the database's own time; nobody changes or deletes them;
+    // only the administrator reads them.
+    match /co/{code}/audit/{id} {
+      allow create: if inCo(code)
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.at == request.time
+        && request.resource.data.keys().hasOnly(['uid', 'who', 'key', 'act', 'what', 'ref', 'ct', 'dev', 'v', 'at']);
+      allow read: if isAdmin();
+    }
+  }
+}
